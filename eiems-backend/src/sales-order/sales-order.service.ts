@@ -7,6 +7,7 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import { CakeProductService } from '../cake-product/cake-product.service';
 import { NotificationService } from '../notification/notification.service';
+import { RedisService } from '../redis/redis.service';
 import {
   ConfirmPaymentDto,
   CreateSalesOrderDto,
@@ -32,13 +33,29 @@ type OrderWithRelations = Prisma.SalesOrderGetPayload<{
   };
 }>;
 
+// Đơn hàng thay đổi trạng thái liên tục nên TTL ngắn hơn khách hàng
+const LIST_CACHE_PREFIX = 'sales-orders:list:';
+const LIST_CACHE_PATTERN = 'sales-orders:list:*';
+const LIST_CACHE_TTL = 20; // giây
+const DETAIL_CACHE_PREFIX = 'sales-orders:detail:';
+const DETAIL_CACHE_TTL = 30; // giây
+
 @Injectable()
 export class SalesOrderService {
   constructor(
     private prisma: PrismaService,
     private cakeProductService: CakeProductService,
     private notificationService: NotificationService,
+    private redis: RedisService,
   ) {}
+
+  /** Xoá toàn bộ cache list (mọi biến thể filter) + cache detail của 1 đơn. */
+  private async invalidateOrderCache(orderId?: string) {
+    await this.redis.delPattern(LIST_CACHE_PATTERN);
+    if (orderId) {
+      await this.redis.del(`${DETAIL_CACHE_PREFIX}${orderId}`);
+    }
+  }
 
   // ─── Tạo đơn hàng (STAFF) ────────────────────────────────────────────────
 
@@ -90,6 +107,9 @@ export class SalesOrderService {
       order.id,
     );
 
+    // Có đơn mới -> mọi cache list (mọi filter) đều không còn đúng nữa
+    await this.invalidateOrderCache();
+
     return order;
   }
 
@@ -101,7 +121,14 @@ export class SalesOrderService {
     deliveryDate?: string;
     createdById?: string;
   }) {
-    return this.prisma.salesOrder.findMany({
+    // Mỗi tổ hợp filter là 1 cache key riêng, vd:
+    // sales-orders:list:{"orderStatus":"PENDING","createdById":"abc"}
+    const cacheKey = `${LIST_CACHE_PREFIX}${JSON.stringify(filters)}`;
+
+    const cached = await this.redis.get(cacheKey);
+    if (cached) return cached;
+
+    const orders = await this.prisma.salesOrder.findMany({
       where: {
         ...(filters.orderStatus && { orderStatus: filters.orderStatus }),
         ...(filters.paymentStatus && { paymentStatus: filters.paymentStatus }),
@@ -118,11 +145,29 @@ export class SalesOrderService {
       },
       orderBy: { createdAt: 'desc' },
     });
+
+    await this.redis.set(cacheKey, orders, LIST_CACHE_TTL);
+    return orders;
   }
 
   // ─── Lấy 1 đơn ───────────────────────────────────────────────────────────
 
   async findOne(id: string): Promise<OrderWithRelations> {
+    const cacheKey = `${DETAIL_CACHE_PREFIX}${id}`;
+    const cached = await this.redis.get<OrderWithRelations>(cacheKey);
+    if (cached) return cached;
+
+    const order = await this.fetchOrderById(id);
+    await this.redis.set(cacheKey, order, DETAIL_CACHE_TTL);
+    return order;
+  }
+
+  /**
+   * Đọc thẳng DB, KHÔNG qua cache. Dùng cho các thao tác nghiệp vụ nội bộ
+   * (đổi trạng thái, cập nhật thanh toán...) vì các thao tác đó cần dữ liệu
+   * mới nhất để validate transition, tránh dùng nhầm bản cache bị stale.
+   */
+  private async fetchOrderById(id: string): Promise<OrderWithRelations> {
     const order = await this.prisma.salesOrder.findUnique({
       where: { id },
       include: {
@@ -145,7 +190,7 @@ export class SalesOrderService {
     _userId: string,
     userRole: Role,
   ) {
-    const order = await this.findOne(id);
+    const order = await this.fetchOrderById(id);
 
     if (!dto.orderStatus) {
       throw new BadRequestException('Thiếu trạng thái đơn hàng');
@@ -180,6 +225,8 @@ export class SalesOrderService {
       );
     }
 
+    await this.invalidateOrderCache(id);
+
     return updated;
   }
 
@@ -191,7 +238,7 @@ export class SalesOrderService {
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     _userId: string,
   ) {
-    const order = await this.findOne(id);
+    const order = await this.fetchOrderById(id);
 
     if (order.orderStatus !== OrderStatus.DELIVERED) {
       throw new BadRequestException(
@@ -203,7 +250,7 @@ export class SalesOrderService {
       throw new BadRequestException('Đơn hàng đã được thanh toán');
     }
 
-    return this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.$transaction(async (tx) => {
       if (dto.paymentStatus === PaymentStatus.DEBT) {
         const debt = await this.createDebtFromOrder(
           tx,
@@ -242,6 +289,10 @@ export class SalesOrderService {
         data: { paymentStatus: dto.paymentStatus },
       });
     });
+
+    await this.invalidateOrderCache(id);
+
+    return result;
   }
 
   // ─── Tạo công nợ từ đơn hàng ─────────────────────────────────────────────
@@ -336,7 +387,7 @@ export class SalesOrderService {
       throw new BadRequestException('Không tìm thấy danh mục THU mặc định');
     }
 
-    return this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.$transaction(async (tx) => {
       // Tạo Transaction THU
       const transaction = await tx.transaction.create({
         data: {
@@ -383,6 +434,10 @@ export class SalesOrderService {
 
       return updated;
     });
+
+    await this.invalidateOrderCache(id);
+
+    return result;
   }
 
   // ─── Helpers ─────────────────────────────────────────────────────────────
