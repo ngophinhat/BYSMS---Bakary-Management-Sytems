@@ -42,7 +42,6 @@ export class NotificationController {
   @Patch('read-all')
   @Roles('OWNER', 'ADMIN', 'ACCOUNTANT', 'STAFF')
   markAllAsRead(@Request() req: any) {
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
     return this.notificationService.markAllAsRead(req.user.id);
   }
 }

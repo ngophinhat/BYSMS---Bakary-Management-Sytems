@@ -6,11 +6,11 @@
   AgeGroup,
   Role,
   CategoryType,
-  // OrderStatus,
-  // PaymentStatus,
-  // PaymentMethod,
-  // TransactionType,
-  // DebtStatus,
+  OrderStatus,
+  PaymentStatus,
+  PaymentMethod,
+  TransactionType,
+  DebtStatus,
 } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 

@@ -8,7 +8,13 @@ import {
   Min,
   IsUUID,
 } from 'class-validator';
-import { CakeShape, CakeSize, AgeGroup, OrderStatus, PaymentStatus } from '@prisma/client';
+import {
+  CakeShape,
+  CakeSize,
+  AgeGroup,
+  OrderStatus,
+  PaymentStatus,
+} from '@prisma/client';
 
 export class CreateSalesOrderDto {
   // Khách hàng
