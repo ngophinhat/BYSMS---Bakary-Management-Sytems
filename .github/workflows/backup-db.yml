@@ -1,0 +1,48 @@
+name: Nightly DB Backup to Google Drive
+
+on:
+  schedule:
+    # 00:00 giờ Việt Nam (UTC+7) = 17:00 UTC ngày hôm trước
+    - cron: "0 17 * * *"
+  workflow_dispatch: {} # cho phép bấm chạy tay để test
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install postgresql-client
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+
+      - name: Dump database
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          TIMESTAMP=$(date +"%Y-%m-%d_%H-%M")
+          pg_dump "$DATABASE_URL" | gzip > backup_${TIMESTAMP}.sql.gz
+          echo "BACKUP_FILE=backup_${TIMESTAMP}.sql.gz" >> $GITHUB_ENV
+
+      - name: Install rclone
+        run: curl https://rclone.org/install.sh | sudo bash
+
+      - name: Configure rclone for Google Drive
+        env:
+          GDRIVE_SA_KEY: ${{ secrets.GDRIVE_SA_KEY }}
+          GDRIVE_FOLDER_ID: ${{ secrets.GDRIVE_FOLDER_ID }}
+        run: |
+          mkdir -p ~/.config/rclone
+          echo "$GDRIVE_SA_KEY" > /tmp/gdrive-sa.json
+          cat > ~/.config/rclone/rclone.conf << EOF
+          [gdrive]
+          type = drive
+          scope = drive
+          service_account_file = /tmp/gdrive-sa.json
+          root_folder_id = ${GDRIVE_FOLDER_ID}
+          EOF
+
+      - name: Upload backup to Google Drive
+        run: |
+          rclone copy "${{ env.BACKUP_FILE }}" gdrive: --progress
+
+      - name: Clean up local dump
+        if: always()
+        run: rm -f backup_*.sql.gz /tmp/gdrive-sa.json
