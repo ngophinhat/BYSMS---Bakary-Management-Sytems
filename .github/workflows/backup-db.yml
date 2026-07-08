@@ -24,20 +24,12 @@ jobs:
       - name: Install rclone
         run: curl https://rclone.org/install.sh | sudo bash
 
-      - name: Configure rclone for Google Drive
+      - name: Configure rclone (OAuth - Gmail cá nhân)
         env:
-          GDRIVE_SA_KEY: ${{ secrets.GDRIVE_SA_KEY }}
-          GDRIVE_FOLDER_ID: ${{ secrets.GDRIVE_FOLDER_ID }}
+          RCLONE_CONFIG_CONTENT: ${{ secrets.RCLONE_CONFIG_CONTENT }}
         run: |
           mkdir -p ~/.config/rclone
-          echo "$GDRIVE_SA_KEY" > /tmp/gdrive-sa.json
-          cat > ~/.config/rclone/rclone.conf << EOF
-          [gdrive]
-          type = drive
-          scope = drive
-          service_account_file = /tmp/gdrive-sa.json
-          root_folder_id = ${GDRIVE_FOLDER_ID}
-          EOF
+          echo "$RCLONE_CONFIG_CONTENT" > ~/.config/rclone/rclone.conf
 
       - name: Upload backup to Google Drive
         run: |
@@ -45,4 +37,4 @@ jobs:
 
       - name: Clean up local dump
         if: always()
-        run: rm -f backup_*.sql.gz /tmp/gdrive-sa.json
+        run: rm -f backup_*.sql.gz
