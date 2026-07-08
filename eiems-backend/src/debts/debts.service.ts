@@ -111,7 +111,7 @@ export class DebtsService {
     });
     const result = debts.map((debt) => {
       const overdueDate = Math.floor(
-        (new Date().getTime() - new Date(debt.dueDate).getTime()) /
+        (new Date().getTime() - new Date(debt.dueDate!).getTime()) /
           (1000 * 60 * 60 * 24),
       );
       return { ...debt, overdueDate };
