@@ -11,7 +11,7 @@ export class AppController {
   @Get()
   testDb() {
     return {
-      status: 'Phi was here',
+      status: 'phinud very fking handsome nigga',
     };
   }
 }

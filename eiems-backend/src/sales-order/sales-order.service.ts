@@ -36,9 +36,9 @@ type OrderWithRelations = Prisma.SalesOrderGetPayload<{
 // Đơn hàng thay đổi trạng thái liên tục nên TTL ngắn hơn khách hàng
 const LIST_CACHE_PREFIX = 'sales-orders:list:';
 const LIST_CACHE_PATTERN = 'sales-orders:list:*';
-const LIST_CACHE_TTL = 20; // giây
+const LIST_CACHE_TTL = 120; // giây — tăng từ 20s, data invalidate chủ động khi có thay đổi nên không cần TTL ngắn
 const DETAIL_CACHE_PREFIX = 'sales-orders:detail:';
-const DETAIL_CACHE_TTL = 30; // giây
+const DETAIL_CACHE_TTL = 180; // giây
 
 @Injectable()
 export class SalesOrderService {
