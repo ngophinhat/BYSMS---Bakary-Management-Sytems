@@ -33,7 +33,7 @@ jobs:
 
       - name: Upload backup to Google Drive
         run: |
-          rclone copy "${{ env.BACKUP_FILE }}" gdrive: --progress
+          rclone copy "${{ env.BACKUP_FILE }}" gdrive:BYSMS-backups --progress
 
       - name: Clean up local dump
         if: always()
