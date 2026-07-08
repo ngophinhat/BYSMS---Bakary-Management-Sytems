@@ -12,6 +12,8 @@ RUN npm ci
 COPY . .
 RUN npx prisma generate
 RUN npm run build
+# DEBUG: in ra cấu trúc dist để xác định đúng vị trí file entrypoint
+RUN ls -R dist
 
 # ---------- Stage 2: Production ----------
 FROM node:22-alpine AS production
