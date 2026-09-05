@@ -3,6 +3,7 @@ import {
   NotFoundException,
   BadRequestException,
   ForbiddenException,
+  ConflictException
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CakeProductService } from '../cake-product/cake-product.service';
@@ -387,7 +388,29 @@ export class SalesOrderService {
       throw new BadRequestException('Không tìm thấy danh mục THU mặc định');
     }
 
-    const result = await this.prisma.$transaction(async (tx) => {
+     const result = await this.prisma.$transaction(async (tx) => {
+      // ─── CHỐT CHẶN RACE CONDITION ───────────────────────────────────────
+      // Dùng updateMany với điều kiện WHERE (id + đang PENDING_CONFIRM) làm
+      // thao tác nguyên tử (atomic) đầu tiên. Nếu bấm nút xác nhận nhiều
+      // lần liên tiếp do lag, nhiều request có thể cùng pass bước kiểm tra
+      // ban đầu (dòng ~371), nhưng ở ĐÂY chỉ CHÍNH XÁC 1 request đổi trạng
+      // thái thành công (count = 1) nhờ khoá dòng của DB. Các request đến
+      // sau nhận count = 0 -> bị chặn ngay, không tạo Transaction trùng.
+      const guard = await tx.salesOrder.updateMany({
+        where: { id, paymentStatus: PaymentStatus.PENDING_CONFIRM },
+        data: {
+          paymentStatus: PaymentStatus.PAID,
+          confirmedById,
+          confirmedAt: new Date(),
+        },
+      });
+
+      if (guard.count === 0) {
+        throw new ConflictException(
+          'Đơn hàng này vừa được xác nhận thanh toán (có thể do bấm trùng) — vui lòng tải lại trang',
+        );
+      }
+
       // Tạo Transaction THU
       const transaction = await tx.transaction.create({
         data: {
@@ -413,15 +436,10 @@ export class SalesOrderService {
         },
       });
 
-      // Cập nhật SalesOrder
+      // Gắn transactionId vào order (an toàn vì đã "thắng" bước guard ở trên)
       const updated = await tx.salesOrder.update({
         where: { id },
-        data: {
-          paymentStatus: PaymentStatus.PAID,
-          confirmedById,
-          confirmedAt: new Date(),
-          transactionId: transaction.id,
-        },
+        data: { transactionId: transaction.id },
       });
 
       // Thông báo cho staff người tạo đơn
