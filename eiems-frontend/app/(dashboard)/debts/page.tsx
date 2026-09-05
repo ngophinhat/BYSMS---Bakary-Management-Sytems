@@ -81,6 +81,7 @@ export default function DebtsPage() {
   const [createOpen, setCreateOpen] = useState(false);
   const [detailOpen, setDetailOpen] = useState(false);
   const [paymentOpen, setPaymentOpen] = useState(false);
+  const [payingDebt, setPayingDebt] = useState(false);
   const [selectedDebt, setSelectedDebt] = useState<Debt | null>(null);
   const [search, setSearch] = useState("");
   const [currentUser, setCurrentUser] = useState<{
@@ -142,28 +143,31 @@ export default function DebtsPage() {
     }
   };
 
-  const handlePayment = async () => {
-    if (!selectedDebt) return;
-    try {
-      const values = await paymentForm.validateFields();
-      await api.post("/payments", {
-        debtId: selectedDebt.id,
-        amount: Number(values.amount as number),
-        note: values.note as string,
-        paymentDate: new Date().toISOString(),
-        receivedById: currentUser?.id,
-      });
-      message.success("Thanh toán thành công!");
-      setPaymentOpen(false);
-      paymentForm.resetFields();
-      void fetchAll();
-      const res = await api.get<Debt>(`/debts/${selectedDebt.id}`);
-      setSelectedDebt(res.data);
-    } catch (err: unknown) {
-      const error = err as { response?: { data?: { message?: string } } };
-      message.error(error.response?.data?.message ?? "Có lỗi xảy ra!");
-    }
-  };
+    const handlePayment = async () => {
+      if (!selectedDebt || payingDebt) return;
+      setPayingDebt(true);
+      try {
+        const values = await paymentForm.validateFields();
+        await api.post("/payments", {
+          debtId: selectedDebt.id,
+          amount: Number(values.amount as number),
+          note: values.note as string,
+          paymentDate: new Date().toISOString(),
+          receivedById: currentUser?.id,
+        });
+        message.success("Thanh toán thành công!");
+        setPaymentOpen(false);
+        paymentForm.resetFields();
+        void fetchAll();
+        const res = await api.get<Debt>(`/debts/${selectedDebt.id}`);
+        setSelectedDebt(res.data);
+      } catch (err: unknown) {
+        const error = err as { response?: { data?: { message?: string } } };
+        message.error(error.response?.data?.message ?? "Có lỗi xảy ra!");
+      } finally {
+        setPayingDebt(false);
+      }
+    };
 
   const activeDebts = debts.filter(
     (d) =>
@@ -599,17 +603,19 @@ export default function DebtsPage() {
       </Modal>
 
       {/* Payment Modal */}
-      <Modal
-        title="Thanh toán công nợ"
-        open={paymentOpen}
-        onOk={() => void handlePayment()}
-        onCancel={() => setPaymentOpen(false)}
-        okText="Xác nhận thanh toán"
-        cancelText="Huỷ"
-        okButtonProps={{
-          style: { background: "#10b981", borderColor: "#10b981" },
-        }}
-      >
+        <Modal
+          title="Thanh toán công nợ"
+          open={paymentOpen}
+          onOk={() => void handlePayment()}
+          onCancel={() => setPaymentOpen(false)}
+          okText="Xác nhận thanh toán"
+          cancelText="Huỷ"
+          confirmLoading={payingDebt}
+          cancelButtonProps={{ disabled: payingDebt }}
+          okButtonProps={{
+            style: { background: "#10b981", borderColor: "#10b981" },
+          }}
+        >
         {selectedDebt && (
           <div
             style={{

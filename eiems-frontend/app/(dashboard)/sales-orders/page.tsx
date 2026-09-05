@@ -32,6 +32,7 @@ export default function SalesOrdersPage() {
   const [statusModalOpen, setStatusModalOpen] = useState(false);
   const [paymentModalOpen, setPaymentModalOpen] = useState(false);
   const [confirmPaymentOpen, setConfirmPaymentOpen] = useState(false);
+  const [confirmingPayment, setConfirmingPayment] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState<SalesOrder | null>(null);
   const [statusForm] = Form.useForm();
   const [paymentForm] = Form.useForm();
@@ -663,24 +664,29 @@ export default function SalesOrdersPage() {
         </div>
 
         <Button
-          type="primary"
-          block
-          style={{ background: '#52c41a', borderColor: '#52c41a', height: 42, fontSize: 15 }}
-          onClick={async () => {
-            if (!selectedOrder) return;
-            try {
-              await salesOrderApi.confirmPayment(selectedOrder.id, selectedOrder.paymentMethod ?? "cash");
-              message.success(`✅ Đã ghi thu ${Number(selectedOrder.totalPrice).toLocaleString('vi-VN')}đ — Đơn ${selectedOrder.orderCode}`);
-              setConfirmPaymentOpen(false);
-              fetchOrders();
-            } catch (err: unknown) {
-              const e = err as { response?: { data?: { message?: string } } };
-              message.error(e.response?.data?.message ?? 'Lỗi xác nhận');
-            }
-          }}
-        >
-          ✓ Xác nhận đã nhận tiền
-        </Button>
+  type="primary"
+  block
+  loading={confirmingPayment}
+  disabled={confirmingPayment}
+  style={{ background: '#52c41a', borderColor: '#52c41a', height: 42, fontSize: 15 }}
+  onClick={async () => {
+    if (!selectedOrder || confirmingPayment) return;
+    setConfirmingPayment(true);
+    try {
+      await salesOrderApi.confirmPayment(selectedOrder.id, selectedOrder.paymentMethod ?? "cash");
+      message.success(`✅ Đã ghi thu ${Number(selectedOrder.totalPrice).toLocaleString('vi-VN')}đ — Đơn ${selectedOrder.orderCode}`);
+      setConfirmPaymentOpen(false);
+      fetchOrders();
+    } catch (err: unknown) {
+      const e = err as { response?: { data?: { message?: string } } };
+      message.error(e.response?.data?.message ?? 'Lỗi xác nhận');
+    } finally {
+      setConfirmingPayment(false);
+    }
+  }}
+>
+  ✓ Xác nhận đã nhận tiền
+</Button>
       </Modal>
 
       {/* Detail Modal */}
